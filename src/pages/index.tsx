@@ -14,6 +14,7 @@ import { HomePageLowerView } from "@/components/GenericPagesViews/HomePageLower/
 import curriculumApi2023 from "@/node-lib/curriculum-api-2023";
 import { HomePage as CmsHomePage } from "@/common-lib/cms-types";
 import getPageProps from "@/node-lib/getPageProps";
+import getBrowserConfig from "@/browser-lib/getBrowserConfig";
 import { TopNavProps } from "@/components/AppComponents/TopNav/TopNav";
 import { SubjectPhasePickerData } from "@/components/SharedComponents/SubjectPhasePicker/SubjectPhasePicker";
 import { filterValidCurriculumPhaseOptions } from "@/pages-helpers/curriculum/docx/tab-helpers";
@@ -57,6 +58,10 @@ const HomePage: NextPage<HomePageProps> = (props) => {
           title: "Free, time-saving teacher resources | Oak National Academy",
           description:
             "Explore our free, time-saving teacher resources from Oak National Academy. Browse and download worksheets, quizzes and slides from KS1 to KS4. ",
+          // The homepage is also served at `/index` by the edge layer (there is
+          // no such route here). An explicit canonical keeps both spellings
+          // pointing at `/` instead of echoing the request path.
+          canonicalURL: `${getBrowserConfig("seoAppUrl")}/`,
         }}
         $background={"bg-primary"}
         topNavProps={topNav}

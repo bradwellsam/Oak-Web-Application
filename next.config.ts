@@ -192,6 +192,14 @@ export default async (phase: NextConfig["phase"]): Promise<NextConfig> => {
           // },
         ],
       },
+      // App-only routes (Google Classroom add-on, onboarding) are not pages for
+      // search: they carry the homepage title, no canonical and no links. Their
+      // layouts are client components, so the robots signal is a header
+      // (SEO sitemap ticket).
+      ...["/classroom/:path*", "/onboarding/:path*"].map((source) => ({
+        source,
+        headers: [{ key: "X-Robots-Tag", value: "noindex, follow" }],
+      })),
     ],
     // Attempt to reduce the size of the build by excluding some packages.
     serverExternalPackages: ["sharp"],

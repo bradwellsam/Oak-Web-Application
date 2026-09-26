@@ -12,6 +12,8 @@ import LessonView from "./Components/LessonView";
 import LessonHeader from "./Components/LessonHeader/LessonHeader";
 
 import { getOpenGraphMetadata, getTwitterMetadata } from "@/app/metadata";
+import { resolveOakHref } from "@/common-lib/urls";
+import { canonicalUrl } from "@/app/canonical";
 import withPageErrorHandling, {
   AppPageProps,
 } from "@/hocs/withPageErrorHandling";
@@ -72,9 +74,20 @@ export async function generateMetadata(
     const description =
       "View lesson content and choose resources to download or share";
 
+    // Self-referencing canonical to the clean lesson URL (no query string).
+    const canonical = canonicalUrl(
+      resolveOakHref({
+        page: "lesson-overview",
+        programmeSlug,
+        unitSlug,
+        lessonSlug,
+      }),
+    );
+
     return {
       title,
       description,
+      alternates: { canonical },
       openGraph: getOpenGraphMetadata({ title, description }),
       twitter: getTwitterMetadata({ title, description }),
     };
