@@ -4,11 +4,17 @@ import {
   BrowseFilters,
 } from "../types";
 
-import { getApplicableBrowseFilters } from "./getApplicableBrowseFilters";
+import {
+  programmeQueryFromFilters,
+  programmeQueryToString,
+} from "@/utils/programme/programmeQuery";
 
 /**
- * Writes `filters` into `search`, leaving every non-filter param untouched.
- * Values matching the default filter are omitted so shared URLs stay short.
+ * Writes `filters` into `search`, leaving every non-filter param (tracking
+ * etc.) untouched. The filter part is produced by `programmeQueryFromFilters`,
+ * the same rules the server uses for the canonical (SEO programme-template
+ * ticket, rules U1/U2/U8): canonical order, a year implies its key stage,
+ * values equal to the default filter are omitted so shared URLs stay short.
  */
 export function addFiltersToSearchString(
   search: string,
@@ -16,14 +22,13 @@ export function addFiltersToSearchString(
   defaultFilter: BrowseFilters,
 ): string {
   const params = new URLSearchParams(search);
-  const query = getApplicableBrowseFilters(filters, defaultFilter);
-
   for (const key of browseFilterKeys) {
     params.delete(browseFilterQueryParamMap[key]);
   }
-  for (const [qsKey, value] of Object.entries(query)) {
-    params.set(qsKey, value);
-  }
+  const filterQuery = programmeQueryToString(
+    programmeQueryFromFilters(filters, defaultFilter),
+  );
+  const rest = params.toString();
 
-  return params.toString();
+  return [filterQuery, rest].filter(Boolean).join("&");
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { OakMaxWidth, OakTabs } from "@oaknational/oak-components";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { notFound, usePathname, useSearchParams } from "next/navigation";
 
 import {
@@ -15,7 +15,6 @@ import {
 import type { Ks4OptionFilterDimension } from "../buildKs4OptionFilterDimensions";
 
 import { ProgrammeHeader } from "./ProgrammeHeader/ProgrammeHeader";
-import { buildProgrammeHeading } from "./ProgrammeHeader/buildProgrammeHeading";
 import {
   UnitSequenceView,
   UnitSequenceViewProps,
@@ -44,12 +43,20 @@ import {
 import type { Ks4Option } from "@/node-lib/curriculum-api-2023/queries/curriculumPhaseOptions/curriculumPhaseOptions.schema";
 import { resolveOakHref } from "@/common-lib/urls";
 import { validateSearchParams } from "@/utils/validateProgrammePageSearchParams";
-import { useBrowseFilters } from "@/context/BrowseFilters";
+import {
+  useBrowseFilters,
+  useBrowseFiltersStore,
+} from "@/context/BrowseFilters";
+import { buildProgrammeMeta } from "@/utils/programme/buildProgrammeMeta";
+import { programmeQueryFromFilters } from "@/utils/programme/programmeQuery";
+import { canonicaliseProgrammeQuery } from "@/utils/programme/canonicalise";
 import { useTeacherBrowseAnalytics } from "@/context/TeacherBrowseAnalytics/TeacherBrowseAnalyticsProvider";
 import { ComponentType } from "@/browser-lib/avo/Avo";
 
 export type ProgrammePageProps = {
   subjectPhaseSlug: string;
+  /** The programme subject title before any unit-level override. */
+  programmeSubjectTitle: string;
   curriculumSelectionSlugs: CurriculumSelectionSlugs;
   curriculumSelectionTitles: CurriculumSelectionTitles;
   curriculumUnitsFormattedData: CurriculumUnitsFormattedData;
@@ -71,6 +78,7 @@ export const ProgrammeView = ({
   curriculumSelectionSlugs,
   curriculumSelectionTitles,
   curriculumUnitsFormattedData,
+  programmeSubjectTitle,
   subjectPhaseSanityData,
   curriculumCMSInfo,
   nonCurriculum,
@@ -100,24 +108,40 @@ export const ProgrammeView = ({
     (store) => store.track,
   );
 
-  const schoolYear = filters.years.find(
-    (year) => validatedParams?.years === year,
-  );
+  const defaultFilter = useBrowseFiltersStore((store) => store.defaultFilter);
 
-  const selectedKeystageSlug = filters.keystages.find(
-    (ks) => validatedParams?.keystages === ks,
-  );
-
-  const heading = buildProgrammeHeading({
-    subjectTitle,
-    data: curriculumUnitsFormattedData,
+  // The H1 comes from the same builder as the <title> (rules T1–T7): the
+  // current filter state is turned into the query the server would see for
+  // it and normalised with the same function, so the two can never drift.
+  const heading = useMemo(() => {
+    const canonical = canonicaliseProgrammeQuery(
+      programmeQueryFromFilters(filters, defaultFilter),
+      curriculumUnitsFormattedData,
+      defaultFilter,
+    );
+    return buildProgrammeMeta({
+      subjectTitle: programmeSubjectTitle,
+      phaseSlug: curriculumSelectionSlugs.phaseSlug,
+      ks4Option: curriculumSelectionSlugs.ks4OptionSlug
+        ? {
+            slug: curriculumSelectionSlugs.ks4OptionSlug,
+            title: examboardTitle ?? curriculumSelectionSlugs.ks4OptionSlug,
+          }
+        : null,
+      data: curriculumUnitsFormattedData,
+      query: canonical.query,
+      filters: canonical.filters,
+      tab: activeTab,
+    }).h1;
+  }, [
     filters,
-    phaseTitle,
-    schoolYear,
-    keyStage: selectedKeystageSlug,
+    defaultFilter,
+    curriculumUnitsFormattedData,
+    programmeSubjectTitle,
+    curriculumSelectionSlugs,
     examboardTitle,
-    tabSlug: activeTab,
-  });
+    activeTab,
+  ]);
 
   // Ensure the active tab matches the one in the latest pathname
   const pathname = usePathname();
