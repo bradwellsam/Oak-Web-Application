@@ -1,9 +1,17 @@
 import {
   buildIntegratedProgrammeUnitsUrl,
+  getLegacyProgrammeRedirectTarget,
   getProgrammeSlugRedirectDestination,
+  redirectProgrammeSlugIfNeeded,
 } from "./legacyProgrammeUnitsRedirect";
 
 import { parseProgrammeSlug } from "@/utils/curriculum/slugs";
+
+jest.mock("next/navigation", () => ({
+  permanentRedirect: (url: string) => {
+    throw new Error(`NEXT_PERMANENT_REDIRECT;${url}`);
+  },
+}));
 
 describe("buildIntegratedProgrammeUnitsUrl", () => {
   it("redirects citizenship ks3 with year and learning-theme query params", () => {
@@ -16,7 +24,7 @@ describe("buildIntegratedProgrammeUnitsUrl", () => {
     );
 
     expect(url).toBe(
-      "/teachers/programmes/citizenship-secondary/units?keystages=ks3&years=7",
+      "/teachers/programmes/citizenship-secondary/units?years=7",
     );
   });
 
@@ -108,7 +116,7 @@ describe("buildIntegratedProgrammeUnitsUrl", () => {
     );
   });
 
-  it("maps learning-theme and category query params", () => {
+  it("maps category but drops learning-theme (thread views are not redirect targets)", () => {
     const url = buildIntegratedProgrammeUnitsUrl(
       parseProgrammeSlug("english-secondary-ks3")!,
       {
@@ -118,8 +126,21 @@ describe("buildIntegratedProgrammeUnitsUrl", () => {
     );
 
     expect(url).toBe(
-      "/teachers/programmes/english-secondary/units?keystages=ks3&threads=theme-1&subject_categories=grammar",
+      "/teachers/programmes/english-secondary/units?keystages=ks3&subject_categories=grammar",
     );
+  });
+
+  it("drops a modern threads param and unknown params on a legacy slug", () => {
+    const url = buildIntegratedProgrammeUnitsUrl(
+      parseProgrammeSlug("maths-primary-ks2")!,
+      {
+        threads: "algebra",
+        utm_source: "newsletter",
+        year: "year-4",
+      },
+    );
+
+    expect(url).toBe("/teachers/programmes/maths-primary/units?years=4");
   });
 });
 
@@ -136,19 +157,17 @@ describe("getProgrammeSlugRedirectDestination", () => {
         year: "year-7",
         "learning-theme": "all",
       }),
-    ).toBe(
-      "/teachers/programmes/citizenship-secondary/units?keystages=ks3&years=7",
-    );
+    ).toBe("/teachers/programmes/citizenship-secondary/units?years=7");
   });
 
   it("maps array search param values", () => {
     expect(
       getProgrammeSlugRedirectDestination("english-secondary-ks3", {
-        "learning-theme": "theme-1",
-        category: "grammar",
+        "learning-theme": ["theme-1"],
+        category: ["grammar"],
       }),
     ).toBe(
-      "/teachers/programmes/english-secondary/units?keystages=ks3&threads=theme-1&subject_categories=grammar",
+      "/teachers/programmes/english-secondary/units?keystages=ks3&subject_categories=grammar",
     );
   });
 
@@ -156,5 +175,44 @@ describe("getProgrammeSlugRedirectDestination", () => {
     expect(
       getProgrammeSlugRedirectDestination("invalid-programme-slug", {}),
     ).toBeNull();
+  });
+});
+
+describe("getLegacyProgrammeRedirectTarget", () => {
+  it("returns slug and query separately so the caller can resolve the board", () => {
+    expect(
+      getLegacyProgrammeRedirectTarget("english-secondary-ks3", {
+        "learning-theme": "theme-1",
+      }),
+    ).toEqual({
+      subjectPhaseSlug: "english-secondary",
+      query: { keystages: "ks3" },
+    });
+  });
+
+  it("returns null for a current subject-phase slug", () => {
+    expect(
+      getLegacyProgrammeRedirectTarget("english-secondary", {}),
+    ).toBeNull();
+  });
+});
+
+describe("redirectProgrammeSlugIfNeeded", () => {
+  it("redirects to the board-resolved slug in one hop", async () => {
+    await expect(
+      redirectProgrammeSlugIfNeeded(
+        "english-secondary-ks3",
+        { "learning-theme": "theme-1" },
+        async (subjectPhaseSlug) => `${subjectPhaseSlug}-aqa`,
+      ),
+    ).rejects.toThrow(
+      "NEXT_PERMANENT_REDIRECT;/teachers/programmes/english-secondary-aqa/units?keystages=ks3",
+    );
+  });
+
+  it("does nothing for a current subject-phase slug", async () => {
+    await expect(
+      redirectProgrammeSlugIfNeeded("english-secondary", {}),
+    ).resolves.toBeUndefined();
   });
 });

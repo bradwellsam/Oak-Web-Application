@@ -11,6 +11,8 @@ import {
 import slugify from "slugify";
 import z from "zod";
 
+import { KS4_EXAMBOARD_PREFERENCE } from "./ks4ExamboardPreference";
+
 import { getSubjectPhaseSlug } from "@/components/TeacherComponents/helpers/getSubjectPhaseSlug";
 import { CurriculumUnitsTabData } from "@/node-lib/curriculum-api-2023";
 import { CurriculumPhaseOptions } from "@/node-lib/curriculum-api-2023/queries/curriculumPhaseOptions/curriculumPhaseOptions.query";
@@ -189,22 +191,9 @@ export function isValidSubjectPhaseSlug(
   return !!isValid;
 }
 
-// Hardcoded set of preferences for redirects
-export const KS4_EXAMBOARD_PREFERENCE: Record<string, string> = {
-  "physical-education": "ocr",
-  computing: "ocr",
-  english: "aqa",
-  geography: "aqa",
-  spanish: "aqa",
-  science: "aqa",
-  german: "aqa",
-  citizenship: "aqa",
-  music: "edexcel",
-  french: "aqa",
-  history: "edexcel",
-  "religious-education": "aqa",
-  "design-technology": "aqa",
-};
+// Hardcoded set of preferences for redirects. Defined in its own edge-safe
+// module (used by middleware too); re-exported here so existing imports keep working.
+export { KS4_EXAMBOARD_PREFERENCE };
 
 /**
  * Picks the default KS4 option slug for a subject (exam board, GCSE, core, etc.), using
@@ -258,6 +247,34 @@ export function getKs4RedirectSlug(
     phaseSlug: slugs.phaseSlug,
     ks4OptionSlug,
   };
+}
+
+/**
+ * Given a subject-phase slug that the programme page would otherwise reject
+ * (e.g. `english-secondary` with no board), returns the board-suffixed slug it
+ * should redirect to (`english-secondary-aqa`), or `null` when the slug is
+ * already valid or no default board exists.
+ *
+ * Used by the programme page's exam-board redirect and by the legacy
+ * programme-slug redirect so both can emit a single hop to the final URL.
+ */
+export function getDefaultKs4SubjectPhaseSlug(
+  allSubjectPhases: CurriculumPhaseOptions,
+  subjectPhaseSlug: string,
+): string | null {
+  const slugs = parseSubjectPhaseSlug(subjectPhaseSlug);
+  if (!slugs || isValidSubjectPhaseSlug(allSubjectPhases, slugs)) {
+    return null;
+  }
+  const redirectParams = getKs4RedirectSlug(allSubjectPhases, slugs);
+  if (!redirectParams) {
+    return null;
+  }
+  return getSubjectPhaseSlug({
+    subject: redirectParams.subjectSlug,
+    phaseSlug: redirectParams.phaseSlug,
+    examBoardSlug: redirectParams.ks4OptionSlug,
+  });
 }
 
 /**
