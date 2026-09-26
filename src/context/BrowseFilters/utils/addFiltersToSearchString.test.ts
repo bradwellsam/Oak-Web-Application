@@ -45,4 +45,21 @@ describe("addFiltersToSearchString", () => {
 
     expect(new URLSearchParams(search).get("tiers")).toBeNull();
   });
+
+  it("writes filters in canonical order and lets a year imply its key stage (U1, U2)", () => {
+    const search = addFiltersToSearchString(
+      "?utm_source=newsletter",
+      createFilter({
+        threads: ["algebra"],
+        keystages: ["ks3"],
+        years: ["8"],
+        tiers: ["higher"],
+      }),
+      defaultFilter,
+    );
+
+    expect(search).toBe(
+      "years=8&tiers=higher&threads=algebra&utm_source=newsletter",
+    );
+  });
 });

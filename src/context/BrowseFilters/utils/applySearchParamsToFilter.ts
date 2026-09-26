@@ -7,6 +7,8 @@ import {
   filterValueSchemas,
 } from "../types";
 
+import { keystageForYear } from "@/utils/programme/programmeQuery";
+
 type MaybeSearchParams = ReadonlyURLSearchParams | URLSearchParams | null;
 
 export function applySearchParamsToFilter(
@@ -41,5 +43,18 @@ export function applySearchParamsToFilter(
       }
     }
   }
+  // A year implies its key stage (rule U2): `?years=8` selects KS3 in the UI
+  // exactly as `?years=8&keystages=ks3` did before.
+  if (
+    "keystages" in filter &&
+    out.years?.length === 1 &&
+    (!out.keystages || out.keystages.length === 0)
+  ) {
+    const implied = keystageForYear(out.years[0]!);
+    if (implied) {
+      out.keystages = [implied];
+    }
+  }
   return out;
 }
+

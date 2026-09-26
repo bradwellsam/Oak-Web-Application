@@ -122,6 +122,7 @@ const defaultProps = {
     examboardTitle: "AQA",
   } as CurriculumSelectionTitles,
   subjectPhaseSlug,
+  programmeSubjectTitle: "Science",
   ks4Options: [],
   ks4OptionFilterDimensions: {},
   curriculumUnitsFormattedData: formatCurriculumUnitsData(
@@ -177,10 +178,10 @@ const renderProgrammeView = (
 };
 
 describe("ProgrammeView", () => {
-  it("renders the programme header", () => {
+  it("renders the programme header from the unified title/H1 builder", () => {
     renderProgrammeView();
     const heading = screen.getByRole("heading", {
-      name: "Science secondary AQA",
+      name: "AQA secondary science",
     });
     expect(heading).toBeInTheDocument();
   });
@@ -245,11 +246,12 @@ describe("ProgrammeView", () => {
     );
   });
 
-  it("strips the subject category from heading when navigating away from units tab", async () => {
+  it("switches to the explainer heading when navigating away from units tab", async () => {
     const englishCategoryId = 101;
     const baseUnit = curriculumUnitsTabFixture().units[0]!;
     const englishProps = {
       ...defaultProps,
+      programmeSubjectTitle: "English",
       curriculumSelectionSlugs: {
         phaseSlug: "primary",
         subjectSlug: "english",
@@ -296,8 +298,9 @@ describe("ProgrammeView", () => {
       ),
     };
     renderProgrammeView({ ...englishProps });
+    // The only category is the programme default, so it is implicit (U8).
     const heading = screen.getByRole("heading", {
-      name: "English: Reading, writing & oracy primary",
+      name: "Primary English",
     });
     expect(heading).toBeInTheDocument();
     const overviewTabButton = screen.getByRole("link", { name: "Explainer" });
@@ -314,7 +317,7 @@ describe("ProgrammeView", () => {
     );
 
     await screen.findByRole("heading", {
-      name: "English primary",
+      name: "Primary English curriculum explained",
     });
   });
 
@@ -362,8 +365,9 @@ describe("ProgrammeView", () => {
         keystages: [],
       };
       renderProgrammeView({ initialFilter });
+      // The URL (empty here) is the source of truth once the store syncs.
       const heading = screen.getByRole("heading", {
-        name: "Science secondary AQA",
+        name: "AQA secondary science",
       });
       expect(heading).toBeInTheDocument();
     });
@@ -422,7 +426,7 @@ describe("ProgrammeView", () => {
       });
       renderProgrammeView();
       const heading = screen.getByRole("heading", {
-        name: "Science secondary AQA",
+        name: "AQA secondary science",
       });
       expect(heading).toBeInTheDocument();
     });
@@ -433,7 +437,7 @@ describe("ProgrammeView", () => {
       });
       renderProgrammeView();
       const heading = screen.getByRole("heading", {
-        name: "Science secondary AQA",
+        name: "AQA secondary science",
       });
       expect(heading).toBeInTheDocument();
     });

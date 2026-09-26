@@ -5,7 +5,6 @@ import { getProgrammeData, getSubjectPhaseOptions } from "./getProgrammeData";
 import ProgrammePageTabs, { generateMetadata } from "./page";
 
 import getBrowserConfig from "@/browser-lib/getBrowserConfig";
-import { resolveOakHref } from "@/common-lib/urls";
 import CMSClient from "@/node-lib/cms";
 import { createUnit } from "@/fixtures/curriculum/unit";
 import { curriculumOverviewMVFixture } from "@/node-lib/curriculum-api-2023/fixtures/curriculumOverview.fixture";
@@ -36,6 +35,7 @@ jest.mock("next/navigation", () => {
       throw new Error(`NEXT_PERMANENT_REDIRECT;${url}`);
     },
     unstable_rethrow: jest.fn(),
+    RedirectType: { push: "push", replace: "replace" },
   };
 });
 
@@ -342,6 +342,85 @@ describe("Programme page tabs", () => {
   });
 });
 
+const mathsPrimaryUnits = () =>
+  ["1", "2", "3", "4", "5", "6"].map((year, i) =>
+    createUnit({
+      slug: `place-value-y${year}`,
+      year,
+      subject_slug: "maths",
+      phase_slug: "primary",
+      order: i,
+      threads: [{ slug: "number", title: "Number", order: 1 }],
+    }),
+  );
+
+const mockMathsPrimary = () => {
+  jest.mocked(getSubjectPhaseOptions).mockResolvedValue({
+    subjects: filterValidCurriculumPhaseOptions(
+      curriculumPhaseOptionsFixture(),
+    ),
+    subjectPhaseKeystageSlugs: {
+      subjectSlug: "maths",
+      phaseSlug: "primary",
+      ks4OptionSlug: null,
+    } satisfies CurriculumSelectionSlugs,
+  });
+  jest.mocked(getProgrammeData).mockResolvedValue({
+    programmeUnitsData: curriculumOverviewMVFixture({ subjectTitle: "Maths" }),
+    curriculumUnitsData: { units: mathsPrimaryUnits() },
+    ks4OptionFilterDimensions: {},
+  });
+};
+
+const metadataFor = (
+  searchParams: Record<string, string | string[] | undefined>,
+  tab = "units",
+  slug = "maths-primary",
+) =>
+  generateMetadata({
+    params: Promise.resolve({ slug, tab }),
+    searchParams: Promise.resolve(searchParams),
+  });
+
+const canonicalOf = (path: string) =>
+  new URL(path, getBrowserConfig("seoAppUrl")).toString();
+
+describe("Programme page query-string rule (U6)", () => {
+  beforeEach(() => {
+    mockMathsPrimary();
+  });
+
+  it("returns 404 for an invalid filter value", async () => {
+    await expect(
+      ProgrammePageTabs({
+        params: Promise.resolve({ slug: "maths-primary", tab: "units" }),
+        searchParams: Promise.resolve({ years: "99" }),
+      }),
+    ).rejects.toEqual(new Error("NEXT_HTTP_ERROR_FALLBACK;404"));
+  });
+
+  it("returns 404 for a thread that is not a real thread", async () => {
+    await expect(
+      ProgrammePageTabs({
+        params: Promise.resolve({ slug: "maths-primary", tab: "units" }),
+        searchParams: Promise.resolve({ threads: "not-a-real-thread" }),
+      }),
+    ).rejects.toEqual(new Error("NEXT_HTTP_ERROR_FALLBACK;404"));
+  });
+
+  it("redirects KS4 science child-subject slugs to the science programme", async () => {
+    jest.mocked(getSubjectPhaseOptions).mockResolvedValue(null);
+    await expect(
+      ProgrammePageTabs({
+        params: Promise.resolve({ slug: "biology-secondary", tab: "units" }),
+        searchParams: Promise.resolve({}),
+      }),
+    ).rejects.toThrow(
+      "NEXT_PERMANENT_REDIRECT;/teachers/programmes/science-secondary/units?keystages=ks4&child_subjects=biology",
+    );
+  });
+});
+
 describe("generateMetadata", () => {
   beforeEach(() => {
     jest.mocked(getProgrammeData).mockClear();
@@ -363,109 +442,9 @@ describe("generateMetadata", () => {
   it("returns empty object when no subject data is found", async () => {
     jest.mocked(getSubjectPhaseOptions).mockResolvedValueOnce(null);
 
-    const result = await generateMetadata({
-      params: Promise.resolve({
-        slug: "maths-primary",
-        tab: "units",
-      }),
-      searchParams: Promise.resolve({}),
-    });
+    const result = await metadataFor({});
 
     expect(result).toEqual({});
-  });
-
-  it("generates metadata with title, description, and canonical URL", async () => {
-    const mockSubjectData = {
-      subjects: filterValidCurriculumPhaseOptions(
-        curriculumPhaseOptionsFixture(),
-      ),
-      subjectPhaseKeystageSlugs: {
-        subjectSlug: "maths",
-        phaseSlug: "primary",
-        ks4OptionSlug: null,
-      } satisfies CurriculumSelectionSlugs,
-    };
-
-    jest.mocked(getSubjectPhaseOptions).mockResolvedValue(mockSubjectData);
-
-    const result = await generateMetadata({
-      params: Promise.resolve({
-        slug: "maths-primary",
-        tab: "units",
-      }),
-      searchParams: Promise.resolve({}),
-    });
-
-    expect(result.title).toBe(
-      "Free Primary Maths Lesson & Curriculum Resources",
-    );
-    expect(result.description).toContain(
-      "Get fully sequenced teaching resources and lesson plans for Primary Maths",
-    );
-
-    expect(result.alternates?.canonical).toBe(
-      new URL(
-        resolveOakHref({
-          page: "teacher-programme",
-          subjectPhaseSlug: "maths-primary",
-          tab: "units",
-          query: undefined,
-        }),
-        getBrowserConfig("seoAppUrl"),
-      ).toString(),
-    );
-    expect(result.openGraph?.title).toBe(
-      "Free Primary Maths Lesson & Curriculum Resources",
-    );
-    expect(result.openGraph?.description).toContain(
-      "Get fully sequenced teaching resources and lesson plans for Primary Maths",
-    );
-    expect(result.twitter?.title).toBe(
-      "Free Primary Maths Lesson & Curriculum Resources",
-    );
-    expect(result.twitter?.description).toContain(
-      "Get fully sequenced teaching resources and lesson plans for Primary Maths",
-    );
-  });
-
-  it("includes query parameters in canonical url", async () => {
-    const mockSubjectData = {
-      subjects: filterValidCurriculumPhaseOptions(
-        curriculumPhaseOptionsFixture(),
-      ),
-      subjectPhaseKeystageSlugs: {
-        subjectSlug: "maths",
-        phaseSlug: "primary",
-        ks4OptionSlug: null,
-      } satisfies CurriculumSelectionSlugs,
-    };
-
-    jest.mocked(getSubjectPhaseOptions).mockResolvedValue(mockSubjectData);
-
-    const queryParams = {
-      years: "4",
-      keystages: "ks2",
-    };
-
-    const result = await generateMetadata({
-      params: Promise.resolve({
-        slug: "maths-primary",
-        tab: "units",
-      }),
-      searchParams: Promise.resolve(queryParams),
-    });
-
-    expect(result.alternates?.canonical).toBe(
-      new URL(
-        resolveOakHref({
-          page: "teacher-programme",
-          subjectPhaseSlug: "maths-primary",
-          tab: "units",
-          query: queryParams,
-        }),
-        getBrowserConfig("seoAppUrl"),
-      ).toString(),
-    );
   });
 
   it("handles errors gracefully and returns empty object", async () => {
@@ -473,137 +452,153 @@ describe("generateMetadata", () => {
       .mocked(getSubjectPhaseOptions)
       .mockRejectedValue(new Error("Test error"));
 
-    const result = await generateMetadata({
-      params: Promise.resolve({
-        slug: "maths-primary",
-        tab: "units",
-      }),
-      searchParams: Promise.resolve({}),
-    });
-
-    expect(result).toEqual({});
+    expect(await metadataFor({})).toEqual({});
   });
 
-  it("includes noindex robots metadata for the download tab", async () => {
-    const mockSubjectData = {
+  describe("with programme data", () => {
+    beforeEach(() => {
+      mockMathsPrimary();
+    });
+
+    it("generates title, description and a clean self canonical (no trailing ?)", async () => {
+      const result = await metadataFor({});
+
+      expect(result.title).toBe("Free Primary Maths Lesson Resources");
+      expect(result.description).toBe(
+        "Free primary maths lesson resources. Fully sequenced units and lesson plans from Oak National Academy.",
+      );
+      expect(result.alternates?.canonical).toBe(
+        canonicalOf("/teachers/programmes/maths-primary/units"),
+      );
+      expect(result.robots).toBeUndefined();
+      expect(result.openGraph?.title).toBe(
+        "Free Primary Maths Lesson Resources",
+      );
+      expect(result.twitter?.title).toBe("Free Primary Maths Lesson Resources");
+    });
+
+    it("keeps a valid filter in the canonical and gives the page its own title (U4)", async () => {
+      const result = await metadataFor({ years: "4" });
+
+      expect(result.title).toBe("Free Year 4 Maths Lesson Resources");
+      expect(result.alternates?.canonical).toBe(
+        canonicalOf("/teachers/programmes/maths-primary/units?years=4"),
+      );
+      expect(result.robots).toBeUndefined();
+    });
+
+    it("normalises order and drops a redundant key stage in the canonical, without redirecting (U2, U9)", async () => {
+      const result = await metadataFor({ keystages: "ks2", years: "4" });
+
+      expect(result.alternates?.canonical).toBe(
+        canonicalOf("/teachers/programmes/maths-primary/units?years=4"),
+      );
+    });
+
+    it("keeps a thread in the canonical, sets noindex and leaves the title alone (U5, T7)", async () => {
+      const result = await metadataFor({
+        threads: "number",
+        keystages: "ks2",
+        utm_source: "test",
+      });
+
+      expect(result.alternates?.canonical).toBe(
+        canonicalOf(
+          "/teachers/programmes/maths-primary/units?keystages=ks2&threads=number",
+        ),
+      );
+      expect(result.robots).toEqual({ index: false, follow: true });
+      expect(result.title).toBe("Free KS2 Maths Lesson Resources");
+    });
+
+    it("ignores unknown parameters (U7)", async () => {
+      const result = await metadataFor({ utm_source: "test", foo: "bar" });
+
+      expect(result.alternates?.canonical).toBe(
+        canonicalOf("/teachers/programmes/maths-primary/units"),
+      );
+      expect(result.robots).toBeUndefined();
+    });
+
+    it("treats a pre-2026 parameter name on a current slug as unknown", async () => {
+      const result = await metadataFor({ "learning-theme": "number" });
+
+      expect(result.alternates?.canonical).toBe(
+        canonicalOf("/teachers/programmes/maths-primary/units"),
+      );
+      expect(result.robots).toBeUndefined();
+    });
+
+    it("returns nothing for an invalid value (the page 404s)", async () => {
+      expect(await metadataFor({ years: "99" })).toEqual({});
+      expect(await metadataFor({ keystages: "ks9" })).toEqual({});
+    });
+
+    it("gives the explainer its own title and a self canonical with no query", async () => {
+      const result = await metadataFor(
+        { keystages: "ks2" },
+        "curriculum-explainer",
+      );
+
+      expect(result.title).toBe("Free Primary Maths Curriculum Explainer");
+      expect(result.alternates?.canonical).toBe(
+        canonicalOf("/teachers/programmes/maths-primary/curriculum-explainer"),
+      );
+      expect(result.robots).toBeUndefined();
+    });
+
+    it("keeps the download tab noindex with a self canonical", async () => {
+      const result = await metadataFor({}, "download");
+
+      expect(result.robots).toEqual({ index: false, follow: true });
+      expect(result.alternates?.canonical).toBe(
+        canonicalOf("/teachers/programmes/maths-primary/download"),
+      );
+    });
+  });
+
+  it("canonicalises a board's explainer to the subject-phase's default board", async () => {
+    jest.mocked(getSubjectPhaseOptions).mockResolvedValue({
       subjects: filterValidCurriculumPhaseOptions(
         curriculumPhaseOptionsFixture(),
       ),
       subjectPhaseKeystageSlugs: {
-        subjectSlug: "computing",
+        subjectSlug: "english",
         phaseSlug: "secondary",
-        ks4OptionSlug: null,
+        ks4OptionSlug: "edexcel",
       } satisfies CurriculumSelectionSlugs,
-    };
-    jest.mocked(getSubjectPhaseOptions).mockResolvedValue(mockSubjectData);
-
-    const result = await generateMetadata({
-      params: Promise.resolve({
-        slug: "computing-secondary-ocr",
-        tab: "download",
-      }),
-      searchParams: Promise.resolve({}),
     });
-
-    expect(result.robots).toEqual({
-      index: false,
-      follow: true,
-    });
-  });
-
-  it("does not include noindex robots metadata for non-download tabs", async () => {
-    const mockProgrammeData = {
+    jest.mocked(getProgrammeData).mockResolvedValue({
       programmeUnitsData: curriculumOverviewMVFixture({
-        subjectTitle: "Maths",
+        subjectTitle: "English",
       }),
       curriculumUnitsData: {
-        units: [
+        units: ["7", "8", "9", "10", "11"].map((year, i) =>
           createUnit({
-            slug: "unit-1",
-            year: "5",
-            keystage_slug: "ks2",
-            subject_slug: "maths",
-            phase_slug: "primary",
+            slug: `unit-y${year}`,
+            year,
+            subject_slug: "english",
+            phase_slug: "secondary",
+            order: i,
           }),
-        ],
+        ),
       },
       ks4OptionFilterDimensions: {},
-      curriculumPhaseOptions: {
-        subjects: filterValidCurriculumPhaseOptions(
-          curriculumPhaseOptionsFixture(),
-        ),
-        tab: "units",
-      },
-      subjectPhaseKeystageSlugs: {
-        subjectSlug: "maths",
-        phaseSlug: "primary",
-        ks4OptionSlug: null,
-      },
-    };
-
-    jest.mocked(getProgrammeData).mockResolvedValue(mockProgrammeData);
-
-    const result = await generateMetadata({
-      params: Promise.resolve({
-        slug: "maths-primary",
-        tab: "units",
-      }),
-      searchParams: Promise.resolve({}),
     });
 
-    expect(result.robots).toBeUndefined();
-  });
+    const result = await metadataFor(
+      {},
+      "curriculum-explainer",
+      "english-secondary-edexcel",
+    );
 
-  describe("search param validation", () => {
-    const mockSubjectData = {
-      subjects: filterValidCurriculumPhaseOptions(
-        curriculumPhaseOptionsFixture(),
+    expect(result.alternates?.canonical).toBe(
+      canonicalOf(
+        "/teachers/programmes/english-secondary-aqa/curriculum-explainer",
       ),
-      subjectPhaseKeystageSlugs: {
-        subjectSlug: "maths",
-        phaseSlug: "secondary",
-        ks4OptionSlug: null,
-      } satisfies CurriculumSelectionSlugs,
-    };
-
-    beforeEach(() => {
-      jest.mocked(getSubjectPhaseOptions).mockResolvedValue(mockSubjectData);
-    });
-
-    it("sanitizes invalid years param in meta title", async () => {
-      const result = await generateMetadata({
-        params: Promise.resolve({ slug: "maths-primary", tab: "units" }),
-        searchParams: Promise.resolve({ years: "invalid" }),
-      });
-
-      expect(result.title).toBe(
-        "Free Secondary Maths Lesson & Curriculum Resources",
-      );
-    });
-
-    it("sanitizes invalid keystages param in meta title", async () => {
-      const result = await generateMetadata({
-        params: Promise.resolve({ slug: "maths-primary", tab: "units" }),
-        searchParams: Promise.resolve({ keystages: "bad-value" }),
-      });
-
-      expect(result.title).toBe(
-        "Free Secondary Maths Lesson & Curriculum Resources",
-      );
-    });
-
-    it("preserves other search params while validating years and keystages", async () => {
-      const result = await generateMetadata({
-        params: Promise.resolve({ slug: "maths-primary", tab: "units" }),
-        searchParams: Promise.resolve({
-          years: "7",
-          tiers: "foundation",
-        }),
-      });
-
-      expect(result.title).toBe(
-        "Free Y7 Maths Foundation Lesson & Curriculum Resources",
-      );
-    });
+    );
+    expect(result.title).toBe(
+      "Free Edexcel Secondary English Curriculum Explainer",
+    );
   });
 });
