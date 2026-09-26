@@ -510,17 +510,17 @@ export function createOakPageConfig<ResolveHrefProps extends OakLinkProps>(
           /**
            * @todo consolidate these -> query
            */
-          if ("search" in resolveHrefProps) {
-            return `${path}?${createQueryStringFromObject(
-              resolveHrefProps.search,
-            )}`;
-          }
-          if ("query" in resolveHrefProps) {
-            return `${path}?${createQueryStringFromObject(
-              resolveHrefProps.query,
-            )}`;
-          }
-          return path;
+          // SEO redirect ticket: only append `?` when there is a query string.
+          // Previously an empty `query`/`search` object produced `/units?`,
+          // which leaked into redirect Locations and canonicals as a
+          // duplicate of `/units` (the `external` case already guards this).
+          const queryString =
+            "search" in resolveHrefProps
+              ? createQueryStringFromObject(resolveHrefProps.search)
+              : "query" in resolveHrefProps
+                ? createQueryStringFromObject(resolveHrefProps.query)
+                : "";
+          return queryString ? `${path}?${queryString}` : path;
         },
       };
     case "internal-custom-resolve":

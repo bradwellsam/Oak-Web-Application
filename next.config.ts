@@ -485,12 +485,11 @@ export default async (phase: NextConfig["phase"]): Promise<NextConfig> => {
             "/teachers/programmes/:subjectPhaseSlug/units/:unitSlug/lessons",
           permanent: true,
         },
-        {
-          source: "/teachers/curriculum/:subjectPhaseSlug/units",
-          destination: "/teachers/programmes/:subjectPhaseSlug/units",
-          permanent: true,
-        },
-
+        // SEO redirect ticket: `/teachers/curriculum/:slug/units` is handled
+        // in src/middleware.ts (getLegacyCurriculumUnitsRedirectUrl) so the
+        // legacy `threads` parameter can be dropped and the default exam
+        // board resolved in the same hop. Static redirects here always forward
+        // the incoming query string, which is why it cannot live in this list.
         {
           source: "/teachers/curriculum/:subjectPhaseSlug/overview",
           destination:
@@ -502,11 +501,16 @@ export default async (phase: NextConfig["phase"]): Promise<NextConfig> => {
           destination: "/teachers/programmes/:subjectPhaseSlug/download",
           permanent: true,
         },
-        {
-          source: "/teachers/key-stages/:keyStageSlug/subjects/:path*",
-          destination: "/",
-          permanent: true,
-        },
+        // SEO redirect ticket: the former
+        //   /teachers/key-stages/:keyStageSlug/subjects/:path*  ->  /
+        // rule sent 46 legacy programme-listing URLs to the homepage. Those
+        // URLs are now mapped to the matching programme page in
+        // src/middleware.ts (getLegacyKeyStageRedirectUrl), which can derive
+        // phase + default board from the key stage and subject.
+        //
+        // Note for maintainers: static redirects here always forward the
+        // incoming query string (`?threads=` included) to the destination, so
+        // any rule that must DROP a param has to live in middleware too.
       ];
 
       return [
