@@ -22,6 +22,13 @@ jest.mock("@/node-lib/curriculum-api-2023", () => ({
   },
 }));
 
+jest.mock(
+  "@/app/(core)/teachers/programmes/[slug]/[tab]/getProgrammeData",
+  () => ({
+    getProgrammeUnitsData: jest.fn().mockResolvedValue(null),
+  }),
+);
+
 describe("teachers sitemap", () => {
   beforeEach(() => {
     process.env.SITEMAP_BASE_URL = "http://localhost:3000";

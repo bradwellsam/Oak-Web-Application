@@ -1,6 +1,8 @@
 import { buildTeachersSitemapEntries } from "./sitemapPagesHelper";
 
 import { CurriculumPhaseOptions } from "@/node-lib/curriculum-api-2023";
+import { createUnit } from "@/fixtures/curriculum/unit";
+import { scienceUnits } from "@/utils/programme/fixtures";
 import curriculumPhaseOptionsFixture from "@/node-lib/curriculum-api-2023/fixtures/curriculumPhaseOptions.fixture";
 import { teachersSitemapDataFixtureCamelCase } from "@/node-lib/curriculum-api-2023/fixtures/teachersSiteMap.fixture";
 
@@ -47,7 +49,8 @@ describe("teacher sitemaps", () => {
       expect(allUrls).toContain(
         "http://localhost:3000/teachers/programmes/english-secondary-edexcel/units",
       );
-      expect(allUrls).toContain(
+      // One explainer per subject-phase: the Edexcel one canonicalises to AQA.
+      expect(allUrls).not.toContain(
         "http://localhost:3000/teachers/programmes/english-secondary-edexcel/curriculum-explainer",
       );
       expect(allUrls).toContain(
@@ -95,43 +98,55 @@ describe("teacher sitemaps", () => {
       );
     });
 
-    it("includes keystage and year programme page variants", () => {
+    it("lists every indexable filter combination from the programme's units, never threads", () => {
       const subjects: CurriculumPhaseOptions = [
-        ...curriculumPhaseOptionsFixture(),
         {
-          title: "Physical education",
-          slug: "physical-education",
-          phases: [{ title: "Primary", slug: "primary" }],
-          ks4_options: [],
-          keystages: [{ title: "KS2", slug: "ks2" }],
+          title: "Science",
+          slug: "science",
+          phases: [{ title: "Secondary", slug: "secondary" }],
+          ks4_options: [{ title: "AQA", slug: "aqa" }],
+          keystages: [
+            { title: "KS3", slug: "ks3" },
+            { title: "KS4", slug: "ks4" },
+          ],
         },
       ];
-      const entries = buildTeachersSitemapEntries(
-        {
-          units: [],
-          lessons: [],
-          programmeFilterUnits:
-            teachersSitemapDataFixtureCamelCase.programmeFilterUnits,
-        },
-        subjects,
-      );
+      const entries = buildTeachersSitemapEntries(emptySitemapData, subjects, {
+        "science-secondary-aqa": { units: scienceUnits() },
+      });
       const allUrls = entries.map((entry) => entry.url);
+      const base =
+        "http://localhost:3000/teachers/programmes/science-secondary-aqa/units";
 
+      expect(allUrls).toContain(base);
+      expect(allUrls).toContain(`${base}?keystages=ks3`);
+      expect(allUrls).toContain(`${base}?years=7`);
+      expect(allUrls).toContain(`${base}?keystages=ks4&tiers=higher`);
       expect(allUrls).toContain(
-        "http://localhost:3000/teachers/programmes/english-secondary-aqa/units?keystages=ks3",
+        `${base}?keystages=ks4&tiers=higher&child_subjects=biology`,
       );
-      expect(allUrls).toContain(
-        "http://localhost:3000/teachers/programmes/english-secondary-aqa/units?years=7",
-      );
+      expect(allUrls).toContain(`${base}?years=11&child_subjects=physics`);
+      // defaults are implicit, a year replaces its key stage, threads never listed
+      expect(allUrls).not.toContain(`${base}?keystages=ks4&tiers=foundation`);
+      expect(allUrls).not.toContain(`${base}?years=11&keystages=ks4`);
+      expect(allUrls.some((url) => url.includes("threads="))).toBe(false);
+      expect(allUrls.some((url) => url.endsWith("?"))).toBe(false);
       expect(allUrls).not.toContain(
-        "http://localhost:3000/teachers/programmes/citizenship-secondary-gcse/units?keystages=ks4",
+        "http://localhost:3000/teachers/programmes/science-secondary-aqa/curriculum-explainer?keystages=ks3",
       );
-      expect(allUrls).not.toContain(
-        "http://localhost:3000/teachers/programmes/english-secondary-aqa/curriculum-explainer?keystages=ks3",
+    });
+
+    it("lists only the base page when a programme's units are not available", () => {
+      const subjects = curriculumPhaseOptionsFixture().filter(
+        (s) => s.slug === "maths",
       );
-      expect(allUrls).toContain(
-        "http://localhost:3000/teachers/programmes/physical-education-primary/units?years=all-years",
-      );
+      const entries = buildTeachersSitemapEntries(emptySitemapData, subjects);
+      const mathsUrls = entries
+        .map((entry) => entry.url)
+        .filter((url) => url.includes("/maths-primary/units"));
+      expect(mathsUrls).toEqual([
+        "http://localhost:3000/teachers/programmes/maths-primary/units",
+      ]);
     });
 
     it("omits variants when all units collapse to a single year bucket (cross-keystage)", () => {
@@ -145,15 +160,21 @@ describe("teacher sitemaps", () => {
           non_curriculum: true,
         },
       ];
-      const programmeFilterUnits =
-        teachersSitemapDataFixtureCamelCase.programmeFilterUnits.filter(
-          (unit) => unit.subjectSlug === "rule-of-law",
-        );
-
-      const entries = buildTeachersSitemapEntries(
-        { units: [], lessons: [], programmeFilterUnits },
-        subjects,
-      );
+      const entries = buildTeachersSitemapEntries(emptySitemapData, subjects, {
+        "rule-of-law-primary": {
+          units: ["3", "4", "5"].map((year, i) =>
+            createUnit({
+              slug: `rule-of-law-y${year}`,
+              year,
+              subject_slug: "rule-of-law",
+              order: i,
+              actions: {
+                programme_field_overrides: { year_slug: "all-years" },
+              },
+            }),
+          ),
+        },
+      });
       const allUrls = entries.map((entry) => entry.url);
 
       const ruleOfLawProgrammeUrls = allUrls.filter((url) =>

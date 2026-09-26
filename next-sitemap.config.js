@@ -103,6 +103,14 @@ module.exports = {
     ],
   },
   exclude: [
+    // App-only and noindexed routes are not for search (SEO sitemap ticket)
+    "/classroom",
+    "/classroom/*",
+    "/onboarding",
+    "/onboarding/*",
+    "/teachers/search",
+    "/teachers/my-library",
+    "/index",
     // Exclude WIP webinar pages
     "/webinars",
     "/webinars/*",

@@ -139,6 +139,26 @@ async function getKs4OptionFilterDimensions(
   return buildKs4OptionFilterDimensions(slugUnits, ks4OptionSlugs);
 }
 
+/**
+ * The units of one programme page (what the filter UI, the canonical rule and
+ * the sitemap enumerate over). Used by `/teachers/sitemap.xml` so the sitemap
+ * lists exactly the filter combinations the page would serve as indexable.
+ */
+export async function getProgrammeUnitsData(subjectPhaseSlug: string) {
+  const slugs = parseSubjectPhaseSlug(subjectPhaseSlug);
+  if (!slugs) {
+    return null;
+  }
+  const curriculumUnitsData = await getCachedCurriculumSequence(
+    slugs.subjectSlug,
+    slugs.phaseSlug,
+    slugs.ks4OptionSlug,
+    slugs.ks4OptionSlug !== "core",
+  );
+  curriculumUnitsData.units = sortUnits(curriculumUnitsData.units);
+  return curriculumUnitsData;
+}
+
 export async function getProgrammeData(
   subjectPhaseSlug: string,
   subjects: CurriculumPhaseOptions,

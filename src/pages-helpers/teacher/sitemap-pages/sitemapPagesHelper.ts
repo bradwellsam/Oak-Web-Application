@@ -1,37 +1,38 @@
 /**
- * Builds teacher sitemap entries from `teachersSitemap` browse data and
- * `curriculumPhaseOptions`.
+ * Builds teacher sitemap entries from `teachersSitemap` browse data,
+ * `curriculumPhaseOptions` and each programme's units.
  *
- * ## URL types emitted
+ * ## URL types emitted (SEO sitemap ticket)
  *
  * - **Base programme pages** — `/units` for every subject phase (and KS4 exam
- *   board/pathway slug where applicable); `/curriculum-explainer` for curriculum
- *   subjects only (omitted for non-curriculum subjects such as rule-of-law).
- * - **Filter variant programme pages** — `?years=` and `?keystages=` on the
- *   units tab only (no variant URLs for curriculum-explainer).
+ *   board/pathway slug where applicable), clean URL, no trailing `?`.
+ * - **Curriculum explainer** — ONE per subject-phase, on the programme a
+ *   board-less URL redirects to (its content is per subject and phase, so the
+ *   board variants canonicalise to it). Omitted for non-curriculum subjects.
+ * - **Filter variant programme pages** — every indexable combination of
+ *   `years`, `keystages`, `tiers`, `child_subjects` and `subject_categories`,
+ *   enumerated by `enumerateIndexableProgrammeQueries()` from the programme's
+ *   units with the same rule the page applies. Never `threads`.
  * - **Unit and lesson overview pages** — from browse-data unit/lesson slugs.
- *
- * ## Filter variant rules
- *
- * Variant URLs mirror programme-page filter visibility. Implementation detail
- * lives in `groupProgrammeFilterUnits.ts`.
- *
- * - **Year variants** — emitted only when `yearOptions.length > 1`. Respects
- *   `programme_field_overrides.year_slug` (e.g. units grouped as `all-years`).
- * - **Keystage variants** — emitted only when `keystages.length > 1` and
- *   `yearOptions.length > 1`. With a single year bucket, keystage query params
- *   do not filter content on the page, so no keystage variants are indexed.
  */
 import type { MetadataRoute } from "next";
 
 import { resolveOakHref } from "@/common-lib/urls";
-import { type CurriculumPhaseOptions } from "@/node-lib/curriculum-api-2023";
-import { TeachersSitemapBrowseData } from "@/node-lib/curriculum-api-2023/queries/teachersSitemap/teacherSitemap.schema";
-import { filterValidCurriculumPhaseOptions } from "@/pages-helpers/curriculum/docx/tab-helpers";
 import {
-  getProgrammeFilterVariants,
-  mapKs4OptionSlugs,
-} from "@/pages-helpers/teacher/sitemap-pages/groupProgrammeFilterUnits";
+  type CurriculumPhaseOptions,
+  type CurriculumUnitsTabData,
+} from "@/node-lib/curriculum-api-2023";
+import { TeachersSitemapBrowseData } from "@/node-lib/curriculum-api-2023/queries/teachersSitemap/teacherSitemap.schema";
+import {
+  filterValidCurriculumPhaseOptions,
+  formatCurriculumUnitsData,
+} from "@/pages-helpers/curriculum/docx/tab-helpers";
+import { mapKs4OptionSlugs } from "@/pages-helpers/teacher/sitemap-pages/groupProgrammeFilterUnits";
+import { enumerateIndexableProgrammeQueries } from "@/utils/programme/enumerateIndexableProgrammeQueries";
+import { getDefaultKs4SubjectPhaseSlug } from "@/utils/curriculum/slugs";
+import { getSubjectPhaseSlug } from "@/components/TeacherComponents/helpers/getSubjectPhaseSlug";
+
+export type ProgrammeUnitsBySlug = Record<string, CurriculumUnitsTabData>;
 
 // SITEMAP_BASE_URL is written to the .env file during next.config.ts execution.
 function getSitemapBaseUrl(): string {
@@ -46,90 +47,111 @@ function getSitemapBaseUrl(): string {
   return sitemapBaseUrl;
 }
 
-/**
- * Builds the URLs for the programme pages
- */
-function buildProgrammeUrls(subjects: CurriculumPhaseOptions): string[] {
-  const url = new URL(getSitemapBaseUrl());
-
-  return subjects.flatMap((subject) =>
-    subject.phases.flatMap((phase) => {
-      const programmePages = mapKs4OptionSlugs(subject, phase);
-
-      return programmePages.flatMap(({ subjectPhaseSlug }) => {
-        url.pathname = resolveOakHref({
-          page: "teacher-programme",
-          subjectPhaseSlug,
-          tab: "units",
-        });
-        const unitUrl = url.toString();
-
-        // If the subject is non-curriculum there is no curriculum explainer
-        if (subject.non_curriculum) {
-          return [unitUrl];
-        }
-
-        url.pathname = resolveOakHref({
-          page: "teacher-programme",
-          subjectPhaseSlug,
-          tab: "curriculum-explainer",
-        });
-
-        const curriculumExplainerUrl = url.toString();
-
-        return [unitUrl, curriculumExplainerUrl];
-      });
-    }),
+/** Every programme page slug (`maths-primary`, `science-secondary-aqa` …). */
+export function listProgrammePageSlugs(
+  subjects: CurriculumPhaseOptions,
+): string[] {
+  return filterValidCurriculumPhaseOptions(subjects).flatMap((subject) =>
+    subject.phases.flatMap((phase) =>
+      mapKs4OptionSlugs(subject, phase).map((p) => p.subjectPhaseSlug),
+    ),
   );
 }
 
-function buildProgrammeFilterVariantUrls(
+/**
+ * The programme whose explainer is the canonical one for a subject-phase:
+ * the default KS4 option (the same one a board-less URL redirects to).
+ */
+function getCanonicalExplainerSlug(
   subjects: CurriculumPhaseOptions,
-  programmeFilterUnits: TeachersSitemapBrowseData["programmeFilterUnits"],
+  subject: CurriculumPhaseOptions[number],
+  phase: CurriculumPhaseOptions[number]["phases"][number],
+  programmePageSlugs: string[],
+): string | undefined {
+  const boardless = getSubjectPhaseSlug({
+    subject: subject.slug,
+    phaseSlug: phase.slug,
+  });
+  const preferred = getDefaultKs4SubjectPhaseSlug(subjects, boardless);
+  if (preferred && programmePageSlugs.includes(preferred)) {
+    return preferred;
+  }
+  return programmePageSlugs.includes(boardless)
+    ? boardless
+    : programmePageSlugs[0];
+}
+
+/**
+ * Builds the URLs for the programme pages: the clean `/units` page and its
+ * indexable filter variants for every programme, plus one explainer per
+ * subject-phase.
+ */
+function buildProgrammeUrls(
+  subjects: CurriculumPhaseOptions,
+  programmeUnitsBySlug: ProgrammeUnitsBySlug,
 ): string[] {
   const baseUrl = getSitemapBaseUrl();
-  const variants = getProgrammeFilterVariants(subjects, programmeFilterUnits);
+  const href = (
+    subjectPhaseSlug: string,
+    tab: "units" | "curriculum-explainer",
+    query?: Record<string, string>,
+  ) =>
+    new URL(
+      resolveOakHref({
+        page: "teacher-programme",
+        subjectPhaseSlug,
+        tab,
+        query: query && Object.keys(query).length > 0 ? query : undefined,
+      }),
+      baseUrl,
+    ).toString();
 
-  return variants.flatMap(({ subjectPhaseSlug, keystages, years }) => {
-    const keystageUrls = keystages.map((keystage) =>
-      new URL(
-        resolveOakHref({
-          page: "teacher-programme",
-          subjectPhaseSlug,
-          tab: "units",
-          query: { keystages: keystage },
-        }),
-        baseUrl,
-      ).toString(),
-    );
+  return subjects.flatMap((subject) =>
+    subject.phases.flatMap((phase) => {
+      const programmePageSlugs = mapKs4OptionSlugs(subject, phase).map(
+        (p) => p.subjectPhaseSlug,
+      );
 
-    const yearUrls = years.map((year) =>
-      new URL(
-        resolveOakHref({
-          page: "teacher-programme",
-          subjectPhaseSlug,
-          tab: "units",
-          query: { years: year },
-        }),
-        baseUrl,
-      ).toString(),
-    );
+      const unitUrls = programmePageSlugs.flatMap((subjectPhaseSlug) => {
+        const units = programmeUnitsBySlug[subjectPhaseSlug];
+        const queries = units
+          ? enumerateIndexableProgrammeQueries(formatCurriculumUnitsData(units))
+          : [{}];
+        // The base page is listed even when its units could not be loaded.
+        const withBase = queries.some((q) => Object.keys(q).length === 0)
+          ? queries
+          : [{}, ...queries];
+        return withBase.map((query) =>
+          href(subjectPhaseSlug, "units", query as Record<string, string>),
+        );
+      });
 
-    return [...keystageUrls, ...yearUrls];
-  });
+      // If the subject is non-curriculum there is no curriculum explainer
+      if (subject.non_curriculum) {
+        return unitUrls;
+      }
+
+      const explainerSlug = getCanonicalExplainerSlug(
+        subjects,
+        subject,
+        phase,
+        programmePageSlugs,
+      );
+      return explainerSlug
+        ? [...unitUrls, href(explainerSlug, "curriculum-explainer")]
+        : unitUrls;
+    }),
+  );
 }
 
 function buildAllUrls(
   data: TeachersSitemapBrowseData,
   subjects: CurriculumPhaseOptions,
+  programmeUnitsBySlug: ProgrammeUnitsBySlug,
 ): string[] {
-  const { units, lessons, programmeFilterUnits } = data;
+  const { units, lessons } = data;
   const validSubjects = filterValidCurriculumPhaseOptions(subjects);
-  const programmeUrls = buildProgrammeUrls(validSubjects);
-  const programmeFilterVariantUrls = buildProgrammeFilterVariantUrls(
-    validSubjects,
-    programmeFilterUnits,
-  );
+  const programmeUrls = buildProgrammeUrls(validSubjects, programmeUnitsBySlug);
   const url = new URL(getSitemapBaseUrl());
 
   // Build the URLs for the unit pages
@@ -155,19 +177,15 @@ function buildAllUrls(
     return url.toString();
   });
 
-  return [
-    ...programmeUrls,
-    ...programmeFilterVariantUrls,
-    ...unitUrls,
-    ...lessonUrls,
-  ];
+  return [...programmeUrls, ...unitUrls, ...lessonUrls];
 }
 
 export function buildTeachersSitemapEntries(
   data: TeachersSitemapBrowseData,
   subjects: CurriculumPhaseOptions,
+  programmeUnitsBySlug: ProgrammeUnitsBySlug = {},
 ): MetadataRoute.Sitemap {
-  const allUrls = buildAllUrls(data, subjects);
+  const allUrls = buildAllUrls(data, subjects, programmeUnitsBySlug);
   const lastModified = new Date();
 
   return allUrls.map((url) => ({
