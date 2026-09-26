@@ -112,7 +112,7 @@ const ModalContent = ({
       $gap={"spacing-20"}
       $overflowX={"visible"}
     >
-      <OakHeading $font={"heading-6"} tag="h1">
+      <OakHeading $font={"heading-6"} tag="h2">
         Filters
       </OakHeading>
       <OakFlex

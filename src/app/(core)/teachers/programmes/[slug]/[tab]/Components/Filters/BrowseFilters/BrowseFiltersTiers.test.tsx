@@ -1,4 +1,5 @@
 import { act } from "@testing-library/react";
+import { usePathname } from "next/navigation";
 
 import { BrowseFiltersTiers } from "./BrowseFiltersTiers";
 import { ks4Setup } from "./BrowseFiltersTiers.fixtures";
@@ -32,28 +33,39 @@ const renderWithStore = (
   );
 
 describe("BrowseFiltersTiers", () => {
-  it("renders correctly", () => {
-    const { getAllByRole } = renderWithStore(
-      <BrowseFiltersTiers data={ks4Setup} />,
-    );
-
-    const elements = getAllByRole("radio") as HTMLInputElement[];
-    expect(elements).toHaveLength(2);
-    expect(elements[0]!.value).toEqual("foundation");
-    expect(elements[1]!.value).toEqual("higher");
+  beforeEach(() => {
+    jest
+      .mocked(usePathname)
+      .mockReturnValue("/teachers/programmes/science-secondary-aqa/units");
   });
 
-  it("interacts correctly", () => {
+  it("renders every tier as a link to its canonical page", () => {
     const { getAllByRole } = renderWithStore(
       <BrowseFiltersTiers data={ks4Setup} />,
     );
 
-    const elements = getAllByRole("radio") as HTMLInputElement[];
+    const links = getAllByRole("link") as HTMLAnchorElement[];
+    expect(links).toHaveLength(2);
+    expect(links[0]!.getAttribute("href")).toBe(
+      "/teachers/programmes/science-secondary-aqa/units?tiers=foundation",
+    );
+    expect(links[1]!.getAttribute("href")).toBe(
+      "/teachers/programmes/science-secondary-aqa/units?tiers=higher",
+    );
+  });
 
-    act(() => elements[0]!.click());
-    expect(elements[0]!.checked).toBe(true);
+  it("selects on click without navigating", () => {
+    const { getAllByRole } = renderWithStore(
+      <BrowseFiltersTiers data={ks4Setup} />,
+    );
 
-    act(() => elements[1]!.click());
-    expect(elements[1]!.checked).toBe(true);
+    const links = getAllByRole("link") as HTMLAnchorElement[];
+
+    act(() => links[0]!.click());
+    expect(links[0]).toHaveAttribute("aria-current", "page");
+
+    act(() => links[1]!.click());
+    expect(links[1]).toHaveAttribute("aria-current", "page");
+    expect(links[0]).not.toHaveAttribute("aria-current");
   });
 });

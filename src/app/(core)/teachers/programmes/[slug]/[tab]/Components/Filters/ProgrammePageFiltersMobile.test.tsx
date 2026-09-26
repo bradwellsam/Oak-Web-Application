@@ -190,7 +190,7 @@ describe("ProgrammePageFiltersMobile", () => {
     renderMobile();
 
     expect(
-      screen.queryByRole("heading", { name: "Filters", level: 1 }),
+      screen.queryByRole("heading", { name: "Filters", level: 2 }),
     ).not.toBeInTheDocument();
 
     const openButton = screen.getByRole("button", { name: "All filters" });
@@ -198,7 +198,7 @@ describe("ProgrammePageFiltersMobile", () => {
     await user.click(openButton);
 
     expect(
-      screen.getByRole("heading", { name: "Filters", level: 1 }),
+      screen.getByRole("heading", { name: "Filters", level: 2 }),
     ).toBeInTheDocument();
   });
 
@@ -210,12 +210,12 @@ describe("ProgrammePageFiltersMobile", () => {
     await user.click(openButton);
 
     const categoryFilter1 = screen.getByTestId(
-      "subject-category-radio-category-1",
+      "subject-category-link-category-1",
     );
     expect(categoryFilter1).toBeInTheDocument();
 
     const categoryFilter2 = screen.getByTestId(
-      "subject-category-radio-category-2",
+      "subject-category-link-category-2",
     );
     expect(categoryFilter2).toBeInTheDocument();
   });
@@ -230,7 +230,7 @@ describe("ProgrammePageFiltersMobile", () => {
     renderMobile(ks4ExamBoardProps, ks4ExamBoardFilters);
 
     expect(
-      screen.getByRole("heading", { name: "Filters", level: 1 }),
+      screen.getByRole("heading", { name: "Filters", level: 2 }),
     ).toBeInTheDocument();
   });
 
