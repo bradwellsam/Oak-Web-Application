@@ -1,4 +1,5 @@
 import { act } from "@testing-library/react";
+import { usePathname } from "next/navigation";
 
 import { BrowseFiltersYears } from "./BrowseFiltersYears";
 
@@ -32,37 +33,54 @@ const renderWithStore = (
   );
 
 describe("BrowseFiltersYears", () => {
-  it("renders correctly, without Core/GCSE duplication", () => {
-    const { getAllByRole } = renderWithStore(
-      <BrowseFiltersYears data={basicSetup} />,
-    );
-
-    const radios = getAllByRole("radio");
-    expect(radios).toHaveLength(3);
-    expect(radios[0]).toHaveAccessibleName("All");
-    expect(radios[1]).toHaveAccessibleName("Year 10");
-    expect(radios[2]).toHaveAccessibleName("Year 11");
+  beforeEach(() => {
+    jest
+      .mocked(usePathname)
+      .mockReturnValue("/teachers/programmes/science-secondary-aqa/units");
   });
 
-  it("interacts correctly", () => {
+  it("renders every option as a link to its canonical page, without Core/GCSE duplication", () => {
     const { getAllByRole } = renderWithStore(
       <BrowseFiltersYears data={basicSetup} />,
     );
 
-    const elements = getAllByRole("radio") as HTMLInputElement[];
-    expect(elements).toHaveLength(3);
+    const links = getAllByRole("link") as HTMLAnchorElement[];
+    expect(links).toHaveLength(3);
+    expect(links[0]).toHaveAccessibleName("All");
+    expect(links[1]).toHaveAccessibleName("Year 10");
+    expect(links[2]).toHaveAccessibleName("Year 11");
+    // A year implies its key stage: `?years=10`, never `?years=10&keystages=ks4`
+    expect(links[1]!.getAttribute("href")).toBe(
+      "/teachers/programmes/science-secondary-aqa/units?years=10",
+    );
+    expect(links[2]!.getAttribute("href")).toBe(
+      "/teachers/programmes/science-secondary-aqa/units?years=11",
+    );
+    expect(links[0]!.getAttribute("href")).toBe(
+      "/teachers/programmes/science-secondary-aqa/units",
+    );
+    expect(links[0]).toHaveAttribute("aria-current", "page");
+  });
+
+  it("selects on click without navigating", () => {
+    const { getAllByRole } = renderWithStore(
+      <BrowseFiltersYears data={basicSetup} />,
+    );
+
+    const links = getAllByRole("link") as HTMLAnchorElement[];
 
     // 10
-    act(() => elements[1]!.click());
-    expect(elements[1]!.checked).toBe(true);
+    act(() => links[1]!.click());
+    expect(links[1]).toHaveAttribute("aria-current", "page");
+    expect(links[0]).not.toHaveAttribute("aria-current");
 
     // 11
-    act(() => elements[2]!.click());
-    expect(elements[2]!.checked).toBe(true);
+    act(() => links[2]!.click());
+    expect(links[2]).toHaveAttribute("aria-current", "page");
 
     // All
-    act(() => elements[0]!.click());
-    expect(elements[0]!.checked).toBe(true);
+    act(() => links[0]!.click());
+    expect(links[0]).toHaveAttribute("aria-current", "page");
   });
 
   it("renders the tablet 'All filters' button when onModalOpen is provided", () => {

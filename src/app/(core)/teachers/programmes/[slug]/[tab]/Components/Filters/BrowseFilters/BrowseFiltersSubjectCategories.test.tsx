@@ -1,4 +1,5 @@
 import { act } from "@testing-library/react";
+import { usePathname } from "next/navigation";
 
 import { BrowseFiltersSubjectCategories } from "./BrowseFiltersSubjectCategories";
 import { ks4Setup } from "./BrowseFiltersSubjectCategories.fixtures";
@@ -38,26 +39,38 @@ const renderWithStore = (
   );
 
 describe("BrowseFiltersSubjectCategories", () => {
-  it("renders correctly", () => {
-    const { getAllByRole } = renderWithStore(
-      <BrowseFiltersSubjectCategories data={ks4Setup} slugs={slugs} />,
-    );
-
-    const elements = getAllByRole("radio") as HTMLInputElement[];
-    expect(elements).toHaveLength(3);
-    expect(elements[0]!.value).toEqual("biology");
-    expect(elements[1]!.value).toEqual("chemistry");
-    expect(elements[2]!.value).toEqual("physics");
+  beforeEach(() => {
+    jest
+      .mocked(usePathname)
+      .mockReturnValue("/teachers/programmes/science-secondary-aqa/units");
   });
 
-  it("interacts correctly", () => {
+  it("renders every category as a link to its canonical page", () => {
     const { getAllByRole } = renderWithStore(
       <BrowseFiltersSubjectCategories data={ks4Setup} slugs={slugs} />,
     );
 
-    const elements = getAllByRole("radio") as HTMLInputElement[];
+    const links = getAllByRole("link") as HTMLAnchorElement[];
+    expect(links).toHaveLength(3);
+    expect(links[0]!.getAttribute("href")).toBe(
+      "/teachers/programmes/science-secondary-aqa/units?subject_categories=biology",
+    );
+    expect(links[1]!.getAttribute("href")).toBe(
+      "/teachers/programmes/science-secondary-aqa/units?subject_categories=chemistry",
+    );
+    expect(links[2]!.getAttribute("href")).toBe(
+      "/teachers/programmes/science-secondary-aqa/units?subject_categories=physics",
+    );
+  });
 
-    act(() => elements[0]!.click());
-    expect(elements[0]!.checked).toBe(true);
+  it("selects on click without navigating", () => {
+    const { getAllByRole } = renderWithStore(
+      <BrowseFiltersSubjectCategories data={ks4Setup} slugs={slugs} />,
+    );
+
+    const links = getAllByRole("link") as HTMLAnchorElement[];
+
+    act(() => links[0]!.click());
+    expect(links[0]).toHaveAttribute("aria-current", "page");
   });
 });

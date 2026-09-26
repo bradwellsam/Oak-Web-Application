@@ -1,4 +1,5 @@
 import { act } from "@testing-library/react";
+import { usePathname } from "next/navigation";
 
 import { BrowseFiltersChildSubjects } from "./BrowseFiltersChildSubjects";
 
@@ -32,26 +33,38 @@ const renderWithStore = (
   );
 
 describe("BrowseFiltersChildSubjects", () => {
-  it("renders correctly", () => {
-    const { getAllByRole } = renderWithStore(
-      <BrowseFiltersChildSubjects data={ks4Setup} />,
-    );
-
-    const elements = getAllByRole("radio") as HTMLInputElement[];
-    expect(elements).toHaveLength(3);
-    expect(elements[0]!.value).toEqual("biology");
-    expect(elements[1]!.value).toEqual("chemistry");
-    expect(elements[2]!.value).toEqual("physics");
+  beforeEach(() => {
+    jest
+      .mocked(usePathname)
+      .mockReturnValue("/teachers/programmes/science-secondary-aqa/units");
   });
 
-  it("interacts correctly", () => {
+  it("renders every exam subject as a link to its canonical page", () => {
     const { getAllByRole } = renderWithStore(
       <BrowseFiltersChildSubjects data={ks4Setup} />,
     );
 
-    const elements = getAllByRole("radio") as HTMLInputElement[];
+    const links = getAllByRole("link") as HTMLAnchorElement[];
+    expect(links).toHaveLength(3);
+    expect(links[0]!.getAttribute("href")).toBe(
+      "/teachers/programmes/science-secondary-aqa/units?child_subjects=biology",
+    );
+    expect(links[1]!.getAttribute("href")).toBe(
+      "/teachers/programmes/science-secondary-aqa/units?child_subjects=chemistry",
+    );
+    expect(links[2]!.getAttribute("href")).toBe(
+      "/teachers/programmes/science-secondary-aqa/units?child_subjects=physics",
+    );
+  });
 
-    act(() => elements[1]!.click());
-    expect(elements[1]!.checked).toBe(true);
+  it("selects on click without navigating", () => {
+    const { getAllByRole } = renderWithStore(
+      <BrowseFiltersChildSubjects data={ks4Setup} />,
+    );
+
+    const links = getAllByRole("link") as HTMLAnchorElement[];
+
+    act(() => links[1]!.click());
+    expect(links[1]).toHaveAttribute("aria-current", "page");
   });
 });
