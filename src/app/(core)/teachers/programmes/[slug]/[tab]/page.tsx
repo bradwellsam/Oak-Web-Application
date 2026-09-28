@@ -20,7 +20,7 @@ import {
   formatCurriculumUnitsData,
 } from "@/pages-helpers/curriculum/docx/tab-helpers";
 import { getOpenGraphMetadata, getTwitterMetadata } from "@/app/metadata";
-import getBrowserConfig from "@/browser-lib/getBrowserConfig";
+import { canonicalUrl } from "@/app/canonical";
 import OakError from "@/errors/OakError";
 import {
   isValidSubjectPhaseSlug,
@@ -41,7 +41,8 @@ import { validateServerSearchParams } from "@/utils/validateProgrammePageSearchP
 import { TeacherBrowseAnalyticsStoreProvider } from "@/context/TeacherBrowseAnalytics/TeacherBrowseAnalyticsProvider";
 import { getProgrammeStateForProgramme } from "@/context/TeacherBrowseAnalytics/utils/getProgrammeState";
 import { getActiveCookieFlags } from "@/hooks/useCookieFlag/getActiveCookieFlags";
-import { getBrowseFilterState } from "@/context/BrowseFilters/utils/getBrowseFilterState";
+import { getDefaultBrowseFilter } from "@/context/BrowseFilters/utils/getDefaultBrowseFilter";
+import { canonicaliseProgrammeQuery } from "@/utils/programme/canonicalise";
 
 const reportError = errorReporter("programme-page::app");
 
@@ -51,6 +52,11 @@ export type PageSearchParms = { [key: string]: string | string[] | undefined };
 const getCachedSubjectOptionData = cache(async (subjectPhaseSlug: string) =>
   getSubjectPhaseOptions(subjectPhaseSlug),
 );
+
+// `generateMetadata` and the page both need the programme's units: the
+// canonical, the robots tag and the 404 decision are all made against them.
+// React `cache` dedupes the two calls within one request.
+const getCachedProgrammeData = cache(getProgrammeData);
 
 export type ProgrammeCmsParams = {
   subjectPhaseSlug: string;
@@ -105,6 +111,51 @@ const getCachedImplementationGuides = cache(
   ),
 );
 
+/**
+ * Loads the programme for a valid slug and normalises the request's query
+ * string against its units (SEO batch 1: status code, canonical, robots).
+ * Shared by `generateMetadata` and the page so both make the same decision.
+ *
+ * Returns `null` when the slug is unknown, `{ programme: null }` when the
+ * slug is a board-less or otherwise invalid subject-phase (the page redirects
+ * or 404s), and the full state otherwise.
+ */
+async function getProgrammePageState(
+  subjectPhaseSlug: string,
+  searchParams: PageSearchParms,
+) {
+  const cachedSubjectData = await getCachedSubjectOptionData(subjectPhaseSlug);
+  if (!cachedSubjectData) {
+    return null;
+  }
+  const { subjects, subjectPhaseKeystageSlugs } = cachedSubjectData;
+  if (!isValidSubjectPhaseSlug(subjects, subjectPhaseKeystageSlugs)) {
+    return { cachedSubjectData, programme: null };
+  }
+  const programme = await getCachedProgrammeData(subjectPhaseSlug, subjects);
+  if (!programme) {
+    return { cachedSubjectData, programme: null };
+  }
+
+  const curriculumUnitsFormattedData = formatCurriculumUnitsData(
+    programme.curriculumUnitsData,
+  );
+  const defaultFilter = getDefaultBrowseFilter(curriculumUnitsFormattedData);
+  const canonical = canonicaliseProgrammeQuery(
+    searchParams,
+    curriculumUnitsFormattedData,
+    defaultFilter,
+  );
+
+  return {
+    cachedSubjectData,
+    programme,
+    curriculumUnitsFormattedData,
+    defaultFilter,
+    canonical,
+  };
+}
+
 export async function generateMetadata({
   params,
   searchParams,
@@ -114,30 +165,45 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug, tab } = await params;
   const originalSearchParams = await searchParams;
-  const pageSearchParams = validateServerSearchParams(originalSearchParams);
 
   redirectProgrammeSlugIfNeeded(slug, originalSearchParams);
 
   try {
-    const cachedSubjectData = await getCachedSubjectOptionData(slug);
-    if (!cachedSubjectData) {
+    const state = await getProgrammePageState(slug, originalSearchParams);
+    if (!state?.programme) {
+      // Unknown, board-less or data-less slug: the page redirects or 404s.
+      return {};
+    }
+    const { cachedSubjectData, canonical } = state;
+
+    if (!canonical.isValid) {
+      // Rule U6: a known filter with a value this programme does not have (or
+      // a combination that matches no unit) is a 404; nothing to describe.
       return {};
     }
 
-    const canonicalURL = new URL(
+    // Rules U1/U2/U7/U8: the canonical is the normalised query – fixed order,
+    // no redundant key stage, no default value, no unknown parameter – so any
+    // spelling of one page names the same URL. `resolveOakHref` emits no
+    // trailing `?` for an empty query (urls.ts).
+    const canonicalURL = canonicalUrl(
       resolveOakHref({
         page: "teacher-programme",
         subjectPhaseSlug: slug,
         tab: "units",
-        query: pageSearchParams,
+        query: canonical.query,
       }),
-      getBrowserConfig("seoAppUrl"),
-    ).toString();
-
-    const { title, description } = getMetaTitle(
-      cachedSubjectData,
-      pageSearchParams,
     );
+
+    // Title and description: unchanged builder, fed the normalised query
+    // without `threads` so a thread view carries its parent page's title
+    // (rule U5). Unique titles per combination are a later batch.
+    const { threads: _threads, ...titleQuery } = canonical.query;
+    const { title, description } = getMetaTitle(cachedSubjectData, titleQuery);
+
+    // Rule U5: any URL containing `threads` is `noindex, follow`; the
+    // download tab stays noindex as before.
+    const isNoindex = tab === "download" || canonical.noindex;
 
     return {
       title,
@@ -145,7 +211,7 @@ export async function generateMetadata({
       alternates: {
         canonical: canonicalURL,
       },
-      ...(tab === "download" && {
+      ...(isNoindex && {
         robots: {
           index: false,
           follow: true,
@@ -220,12 +286,26 @@ const InnerProgrammePage = async (props: AppPageProps<ProgrammePageParams>) => {
     }
   }
 
-  const cachedProgrammeData = await getProgrammeData(
+  const state = await getProgrammePageState(
     subjectPhaseSlug,
-    subjects,
+    originalSearchParams,
   );
 
-  if (!cachedProgrammeData) {
+  if (!state?.programme) {
+    return notFound();
+  }
+
+  const {
+    programme: cachedProgrammeData,
+    curriculumUnitsFormattedData,
+    defaultFilter,
+    canonical,
+  } = state;
+
+  if (!canonical.isValid) {
+    // Rule U6: an invalid filter value or an empty combination is not a page.
+    // Rendering an empty unit list under an invented title is what made the
+    // URL space unbounded; a 404 is the only response with nothing to index.
     return notFound();
   }
 
@@ -239,14 +319,9 @@ const InnerProgrammePage = async (props: AppPageProps<ProgrammePageParams>) => {
 
   const { isEnabled } = await draftMode();
 
-  const curriculumUnitsFormattedData =
-    formatCurriculumUnitsData(curriculumUnitsData);
-
-  // Resolve filter server-side from URL search params
-  const { defaultFilter, resolvedFilter } = getBrowseFilterState({
-    data: curriculumUnitsFormattedData,
-    searchParams,
-  });
+  // The filter state the page renders with: the programme defaults with the
+  // normalised query applied (unknown parameters ignored, rule U7).
+  const resolvedFilter = canonical.filters;
 
   // All KS4 options for subject phase
   const ks4Options =
